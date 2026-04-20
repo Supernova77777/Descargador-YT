@@ -1,6 +1,7 @@
 [package]
 name = "yt-mp3-downloader"
-version = "1.0.0"
+version = "1.0.3"
+# Cache buster for GitHub Actions
 description = "YouTube MP3 Downloader — Tauri 2.0"
 edition = "2021"
 rust-version = "1.77"
