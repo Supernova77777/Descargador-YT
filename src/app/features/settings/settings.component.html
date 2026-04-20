@@ -1,0 +1,99 @@
+<section class="page animate-fade-in-up">
+  <header class="page-header">
+    <div>
+      <h1 class="page-title"><span class="text-gradient">Ajustes</span></h1>
+      <p class="page-subtitle">Personaliza tu experiencia de descarga</p>
+    </div>
+  </header>
+
+  <div class="glass-card settings-card">
+    <div class="setting-group">
+      <h3 class="group-title">Descarga</h3>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label class="form-label" for="cfg-quality">Calidad por defecto</label>
+          <span class="text-muted setting-desc">Se aplicará a todas las descargas nuevas</span>
+        </div>
+        <select
+          id="cfg-quality"
+          class="form-input form-select setting-ctrl"
+          [ngModel]="settings().default_quality"
+          (ngModelChange)="updateField('default_quality', $event)"
+        >
+          @for (q of qualities; track q.value) {
+            <option [value]="q.value">{{ q.label }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label class="form-label" for="cfg-outdir">Carpeta de destino</label>
+          <span class="text-muted setting-desc">{{ settings().default_output_dir || 'No configurada' }}</span>
+        </div>
+        <button id="cfg-pick-dir" class="btn btn-secondary btn-sm setting-ctrl" (click)="onPickDir()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          Cambiar
+        </button>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <label class="form-label" for="cfg-auto-open">Abrir carpeta al terminar</label>
+          <span class="text-muted setting-desc">Abre el explorador cuando finalice la descarga</span>
+        </div>
+        <label class="toggle" id="cfg-auto-open">
+          <input
+            type="checkbox"
+            [ngModel]="settings().auto_open_folder"
+            (ngModelChange)="updateField('auto_open_folder', $event)"
+          />
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
+      </div>
+    </div>
+
+    <hr class="divider"/>
+
+    <div class="setting-group">
+      <h3 class="group-title">Acerca de</h3>
+      <div class="about-grid">
+        <div class="about-item">
+          <span class="text-muted about-label">Motor</span>
+          <span class="badge badge-accent">Tauri 2.0</span>
+        </div>
+        <div class="about-item">
+          <span class="text-muted about-label">UI</span>
+          <span class="badge badge-accent">Angular 17</span>
+        </div>
+        <div class="about-item">
+          <span class="text-muted about-label">Backend</span>
+          <span class="badge badge-accent">Rust + yt-dlp</span>
+        </div>
+        <div class="about-item">
+          <span class="text-muted about-label">Versión</span>
+          <span class="badge badge-accent">1.0.0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="save-row">
+      @if (saved()) {
+        <span class="text-success" style="font-size:0.85rem;display:flex;align-items:center;gap:6px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Cambios guardados
+        </span>
+      }
+      <button id="btn-save-settings" class="btn btn-primary" [disabled]="isSaving()" (click)="onSave()">
+        @if (isSaving()) { <span class="spinner"></span> Guardando… }
+        @else {
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Guardar cambios
+        }
+      </button>
+    </div>
+  </div>
+</section>

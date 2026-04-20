@@ -1,0 +1,32 @@
+# Node
+node_modules/
+dist/
+.angular/
+
+# Rust
+src-tauri/target/
+src-tauri/gen/
+
+# Binaries (se descargan en CI o manualmente)
+src-tauri/binaries/*.exe
+src-tauri/binaries/yt-dlp-*
+src-tauri/binaries/ffmpeg-*
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Env
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*

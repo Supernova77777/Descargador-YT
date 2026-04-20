@@ -1,0 +1,250 @@
+<section class="page animate-fade-in-up">
+
+  <!-- Page Header -->
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">Descargar <span class="text-gradient">MP3</span></h1>
+      <p class="page-subtitle">Pega un enlace de YouTube y obtén tu audio en segundos</p>
+    </div>
+    <span class="badge badge-accent">
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+        <circle cx="5" cy="5" r="4"/>
+      </svg>
+      Local · Sin servidores
+    </span>
+  </header>
+
+  <!-- URL Input Card -->
+  <div class="glass-card url-card">
+    <div class="url-input-wrapper">
+      <div class="url-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+      </div>
+      <input
+        id="url-input"
+        type="url"
+        class="url-input"
+        placeholder="https://www.youtube.com/watch?v=..."
+        [value]="url()"
+        (input)="url.set($any($event.target).value)"
+        (paste)="onPaste($event)"
+        (keydown.enter)="onFetch()"
+        [disabled]="isLoading() || isDownloading()"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      @if (url()) {
+        <button class="clear-btn" (click)="onClearUrl()" title="Limpiar" id="btn-clear-url">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      }
+    </div>
+
+    <button
+      id="btn-fetch"
+      class="btn btn-primary"
+      [disabled]="!canFetch()"
+      (click)="onFetch()"
+    >
+      @if (isLoading()) {
+        <span class="spinner"></span>
+        Analizando…
+      } @else {
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        Analizar
+      }
+    </button>
+  </div>
+
+  <!-- Error Message -->
+  @if (errorMsg()) {
+    <div class="error-banner animate-fade-in" role="alert">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="15" y1="9" x2="9" y2="15"/>
+        <line x1="9" y1="9" x2="15" y2="15"/>
+      </svg>
+      {{ errorMsg() }}
+    </div>
+  }
+
+  <!-- Video Info Preview -->
+  @if (videoInfo(); as info) {
+    <div class="glass-card video-card animate-fade-in-up">
+      <div class="thumbnail-wrapper">
+        <img
+          [src]="info.thumbnail"
+          [alt]="info.title"
+          class="thumbnail"
+          loading="lazy"
+        />
+        <div class="duration-badge">{{ formatDuration(info.duration) }}</div>
+      </div>
+
+      <div class="video-meta">
+        <h2 class="video-title">{{ info.title }}</h2>
+        <div class="video-details">
+          <span class="detail-chip">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+            {{ info.uploader }}
+          </span>
+          <span class="detail-chip">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            {{ formatViews(info.view_count) }} vistas
+          </span>
+          <span class="detail-chip">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            {{ formatDuration(info.duration) }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Download Options -->
+    <div class="glass-card options-card animate-fade-in-up" style="animation-delay:0.1s">
+      <h3 class="options-title">Configuración de descarga</h3>
+
+      <div class="options-grid">
+        <!-- Quality Selector -->
+        <div class="form-group">
+          <label class="form-label" for="quality-select">Calidad de audio</label>
+          <select
+            id="quality-select"
+            class="form-input form-select"
+            [ngModel]="quality()"
+            (ngModelChange)="quality.set($event)"
+          >
+            @for (q of qualities; track q.value) {
+              <option [value]="q.value">{{ q.label }}</option>
+            }
+          </select>
+        </div>
+
+        <!-- Output Directory -->
+        <div class="form-group">
+          <label class="form-label" for="output-dir">Carpeta de destino</label>
+          <div class="dir-input-row">
+            <input
+              id="output-dir"
+              type="text"
+              class="form-input dir-input"
+              [value]="outputDir()"
+              (input)="outputDir.set($any($event.target).value)"
+              placeholder="Selecciona carpeta..."
+              readonly
+            />
+            <button
+              id="btn-pick-dir"
+              class="btn btn-secondary btn-sm"
+              (click)="onPickDir()"
+              title="Seleccionar carpeta"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              Carpeta
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Download / Cancel Button -->
+      <div class="action-row">
+        @if (!isDownloading()) {
+          <button
+            id="btn-download"
+            class="btn btn-primary btn-lg btn-full"
+            [disabled]="!canDownload()"
+            (click)="onDownload()"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Descargar MP3
+          </button>
+        } @else {
+          <button
+            id="btn-cancel"
+            class="btn btn-secondary btn-lg btn-full"
+            (click)="onCancel()"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+            </svg>
+            Cancelar descarga
+          </button>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- Progress Panel -->
+  @if (isDownloading() || progress()) {
+    <div class="glass-card progress-card animate-fade-in">
+      <div class="progress-header">
+        <span class="progress-stage">{{ stageLabel() }}</span>
+        <span class="progress-pct">{{ progressPercent() | number:'1.0-0' }}%</span>
+      </div>
+
+      <div class="progress-track">
+        <div
+          class="progress-fill"
+          [style.width.%]="progressPercent()"
+        ></div>
+      </div>
+
+      @if (progress(); as p) {
+        <div class="progress-details">
+          @if (p.speed) {
+            <span class="progress-stat">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              {{ p.speed }}
+            </span>
+          }
+          @if (p.eta) {
+            <span class="progress-stat">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              ETA {{ p.eta }}
+            </span>
+          }
+        </div>
+      }
+    </div>
+  }
+
+  <!-- Success Banner -->
+  @if (lastRecord(); as rec) {
+    <div class="success-banner animate-fade-in-up">
+      <div class="success-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+      <div class="success-text">
+        <strong>¡Descarga exitosa!</strong>
+        <span class="text-secondary" style="font-size:0.8rem;">{{ rec.output_path }}</span>
+      </div>
+    </div>
+  }
+
+</section>

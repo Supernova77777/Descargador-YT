@@ -1,0 +1,55 @@
+<section class="page animate-fade-in-up">
+  <header class="page-header">
+    <div>
+      <h1 class="page-title">Historial de <span class="text-gradient">Descargas</span></h1>
+      <p class="page-subtitle">Archivos MP3 descargados anteriormente</p>
+    </div>
+    @if (records().length > 0) {
+      <button id="btn-clear-history" class="btn btn-secondary btn-sm" (click)="onClear()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+          <path d="M10 11v6M14 11v6"/>
+        </svg>
+        Limpiar todo
+      </button>
+    }
+  </header>
+
+  @if (isLoading()) {
+    <div class="loading-state">
+      <div class="spinner" style="width:32px;height:32px;border-width:3px;"></div>
+      <span class="text-secondary">Cargando historial…</span>
+    </div>
+  } @else if (records().length === 0) {
+    <div class="empty-state glass-card">
+      <div class="empty-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+      </div>
+      <p class="empty-title">Sin descargas aún</p>
+      <p class="text-muted" style="font-size:0.85rem;">Descarga tu primer MP3 desde la pestaña Descargar</p>
+    </div>
+  } @else {
+    <div class="records-list">
+      @for (rec of records(); track rec.id) {
+        <div class="record-card glass-card animate-fade-in">
+          <img [src]="rec.thumbnail" [alt]="rec.title" class="rec-thumb" loading="lazy"/>
+          <div class="rec-info">
+            <span class="rec-title">{{ rec.title }}</span>
+            <span class="rec-uploader text-secondary">{{ rec.uploader }}</span>
+            <div class="rec-meta">
+              <span class="badge badge-accent">{{ rec.quality }} kbps</span>
+              <span class="text-muted" style="font-size:0.7rem;">{{ formatDuration(rec.duration) }}</span>
+              <span class="text-muted" style="font-size:0.7rem;">{{ rec.file_size_mb | number:'1.1-1' }} MB</span>
+              <span class="text-muted" style="font-size:0.7rem;">{{ rec.downloaded_at | date:'short' }}</span>
+            </div>
+            <span class="rec-path text-muted">{{ rec.output_path }}</span>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</section>
