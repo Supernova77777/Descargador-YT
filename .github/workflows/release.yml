@@ -140,22 +140,14 @@ jobs:
       - name: 📦 Install Node dependencies
         run: npm ci
 
-      # ── Inicializar proyecto Android (solo primera vez en CI) ──
+      # ── Inicializar proyecto Android ──
       - name: 📱 Tauri Android Init
-        run: npx tauri android init
+        run: npx tauri android init || true
 
-      # ── Crear mock binaries para engañar a Tauri (Android no usa sidecars nativos así) ──
-      - name: 👻 Create Mock Binaries for Android
+      # ── Strip externalBin for Android (Sidecars are not supported on mobile) ──
+      - name: 👻 Remove externalBin from config
         run: |
-          mkdir -p src-tauri/binaries
-          touch src-tauri/binaries/yt-dlp-aarch64-linux-android
-          touch src-tauri/binaries/ffmpeg-aarch64-linux-android
-          touch src-tauri/binaries/yt-dlp-armv7-linux-androideabi
-          touch src-tauri/binaries/ffmpeg-armv7-linux-androideabi
-          touch src-tauri/binaries/yt-dlp-i686-linux-android
-          touch src-tauri/binaries/ffmpeg-i686-linux-android
-          touch src-tauri/binaries/yt-dlp-x86_64-linux-android
-          touch src-tauri/binaries/ffmpeg-x86_64-linux-android
+          node -e "const fs = require('fs'); const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8')); delete config.bundle.externalBin; fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(config, null, 2));"
 
       # ── Build APK Release (sin firma — unsigned) ──
       - name: 🔨 Build Android APK
