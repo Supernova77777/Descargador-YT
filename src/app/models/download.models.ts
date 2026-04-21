@@ -17,7 +17,8 @@ export interface VideoInfo {
 export interface DownloadParams {
   url: string;
   output_dir: string;
-  quality: AudioQuality;
+  quality: string;
+  format: string;
 }
 
 /** Calidades de audio disponibles */
@@ -45,7 +46,8 @@ export interface DownloadRecord {
   uploader: string;
   thumbnail: string;
   duration: number;
-  quality: AudioQuality;
+  quality: string;
+  format: string;
   output_path: string;
   downloaded_at: string;     // ISO timestamp
   file_size_mb: number;

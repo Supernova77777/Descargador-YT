@@ -3,14 +3,14 @@
   <!-- Page Header -->
   <header class="page-header">
     <div>
-      <h1 class="page-title">Descargar <span class="text-gradient">MP3</span></h1>
-      <p class="page-subtitle">Pega un enlace de YouTube y obtén tu audio en segundos</p>
+      <h1 class="page-title">Descargar <span class="text-gradient">Universal</span></h1>
+      <p class="page-subtitle">Pega un enlace de YouTube y obtén tu multimedia en segundos</p>
     </div>
     <span class="badge badge-accent">
       <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
         <circle cx="5" cy="5" r="4"/>
       </svg>
-      Local · Sin servidores
+      Cobalt Backend
     </span>
   </header>
 
@@ -87,7 +87,10 @@
           class="thumbnail"
           loading="lazy"
         />
-        <div class="duration-badge">{{ formatDuration(info.duration) }}</div>
+        <!-- OEmbed might return 0 so we omit badge if 0 -->
+        @if(info.duration > 0) {
+          <div class="duration-badge">{{ formatDuration(info.duration) }}</div>
+        }
       </div>
 
       <div class="video-meta">
@@ -100,20 +103,6 @@
             </svg>
             {{ info.uploader }}
           </span>
-          <span class="detail-chip">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-              <circle cx="12" cy="12" r="3"/>
-            </svg>
-            {{ formatViews(info.view_count) }} vistas
-          </span>
-          <span class="detail-chip">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12 6 12 12 16 14"/>
-            </svg>
-            {{ formatDuration(info.duration) }}
-          </span>
         </div>
       </div>
     </div>
@@ -122,24 +111,38 @@
     <div class="glass-card options-card animate-fade-in-up" style="animation-delay:0.1s">
       <h3 class="options-title">Configuración de descarga</h3>
 
-      <div class="options-grid">
+      <div class="options-grid full-grid">
+        <!-- Format Selector -->
+        <div class="form-group">
+          <label class="form-label" for="format-select">Formato</label>
+          <select
+            id="format-select"
+            class="form-input form-select"
+            [ngModel]="format()"
+            (ngModelChange)="format.set($event)"
+          >
+            <option value="mp3">🎵 Audio (M4A/MP3)</option>
+            <option value="mp4">🎬 Video (MP4)</option>
+          </select>
+        </div>
+
         <!-- Quality Selector -->
         <div class="form-group">
-          <label class="form-label" for="quality-select">Calidad de audio</label>
+          <label class="form-label" for="quality-select">Resolución / Calidad</label>
           <select
             id="quality-select"
             class="form-input form-select"
             [ngModel]="quality()"
             (ngModelChange)="quality.set($event)"
           >
-            @for (q of qualities; track q.value) {
+            @for (q of currentQualities(); track q.value) {
               <option [value]="q.value">{{ q.label }}</option>
             }
           </select>
         </div>
 
         <!-- Output Directory -->
-        <div class="form-group">
+        <div class="form-group dir-group" style="grid-column: 1 / -1;">
           <label class="form-label" for="output-dir">Carpeta de destino</label>
           <div class="dir-input-row">
             <input
@@ -180,7 +183,7 @@
               <polyline points="7 10 12 15 17 10"/>
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
-            Descargar MP3
+            Descargar Archivo
           </button>
           
           <button
@@ -198,6 +201,7 @@
           <button
             id="btn-cancel"
             class="btn btn-secondary btn-lg btn-full"
+            style="width: 100%;"
             (click)="onCancel()"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -244,19 +248,36 @@
     </div>
   }
 
-  <!-- Success Banner -->
+  <!-- Success Banner with Native Player -->
   @if (lastRecord(); as rec) {
-    <div class="success-banner animate-fade-in-up">
-      <div class="success-icon">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="20 6 9 17 4 12"/>
-        </svg>
+    <div class="success-banner animate-fade-in-up" style="flex-direction: column; align-items: stretch; gap: 1rem;">
+      <div style="display: flex; align-items: center; gap: var(--space-md);">
+        <div class="success-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <div class="success-text">
+          <strong>¡Descarga exitosa!</strong>
+          <span class="text-secondary" style="font-size:0.8rem; word-break: break-all;">{{ rec.output_path }}</span>
+        </div>
       </div>
-      <div class="success-text">
-        <strong>¡Descarga exitosa!</strong>
-        <span class="text-secondary" style="font-size:0.8rem;">{{ rec.output_path }}</span>
-      </div>
+      
+      @if (playerUrl()) {
+        <div class="media-preview" style="margin-top: 0.5rem; border-radius: var(--radius-md); overflow: hidden; background: rgba(0,0,0,0.4);">
+          @if (rec.format === 'mp4') {
+            <video [src]="playerUrl()" controls style="width: 100%; display: block; max-height: 350px; outline: none;"></video>
+          } @else {
+            <audio [src]="playerUrl()" controls style="width: 100%; display: block; outline: none;"></audio>
+          }
+        </div>
+      }
     </div>
   }
+
+  <!-- Global Footer -->
+  <footer class="app-footer">
+    <p>Creado por Carlos Eduardo Morales Camposeco</p>
+  </footer>
 
 </section>

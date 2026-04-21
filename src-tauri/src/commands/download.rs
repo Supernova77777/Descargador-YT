@@ -1,31 +1,32 @@
-// download.rs — Lógica de descarga MP3 con progreso en tiempo real
+// download.rs — Lógica de descarga nativa usando Cobalt API y reqwest
 
-use crate::utils::{platform, progress as prog};
+use crate::utils::progress as prog;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
 };
+use reqwest::Client;
+use serde_json::json;
 use tauri::{AppHandle, Emitter};
-use tokio::{
-    io::{AsyncBufReadExt, BufReader},
-    process::Command,
-};
+use tokio::{fs::File, io::AsyncWriteExt};
+use futures_util::StreamExt;
 use uuid::Uuid;
 
-// ──────────────────────────────────────────────────────────────
+// =================================================================================
 // Tipos públicos
-// ──────────────────────────────────────────────────────────────
+// =================================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadParams {
     pub url:        String,
     pub output_dir: String,
-    pub quality:    String, // "128" | "192" | "320"
+    pub format:     String, // "mp3" o "mp4"
+    pub quality:    String, // "128" | "192" | "320" (o resoluciones como "1080" si es video)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,15 +36,28 @@ pub struct DownloadRecord {
     pub uploader:     String,
     pub thumbnail:    String,
     pub duration:     u64,
+    #[serde(default = "default_quality")]
     pub quality:      String,
+    #[serde(default = "default_format")]
+    pub format:       String,
     pub output_path:  String,
     pub downloaded_at: String,
     pub file_size_mb: f64,
 }
 
-// ──────────────────────────────────────────────────────────────
+fn default_quality() -> String { "192".into() }
+fn default_format() -> String { "mp3".into() }
+
+#[derive(Deserialize)]
+struct CobaltResponse {
+    status: String,
+    url: Option<String>,
+    text: Option<String>,
+}
+
+// =================================================================================
 // Estado global de cancelación
-// ──────────────────────────────────────────────────────────────
+// =================================================================================
 
 static CANCEL_FLAG: std::sync::OnceLock<Arc<AtomicBool>> = std::sync::OnceLock::new();
 
@@ -51,19 +65,18 @@ fn cancel_flag() -> &'static Arc<AtomicBool> {
     CANCEL_FLAG.get_or_init(|| Arc::new(AtomicBool::new(false)))
 }
 
-// ──────────────────────────────────────────────────────────────
+// =================================================================================
 // Comandos Tauri
-// ──────────────────────────────────────────────────────────────
+// =================================================================================
 
-/// Descarga audio de YouTube y lo convierte a MP3.
-/// Emite eventos `download://progress` mientras descarga.
+/// Descarga multimedia de YouTube usando Cobalt y graba el stream.
 #[tauri::command]
 pub async fn download_audio(
     app: AppHandle,
     params: DownloadParams,
 ) -> Result<DownloadRecord, String> {
     cancel_flag().store(false, Ordering::SeqCst);
-    _download_audio(&app, params).await.map_err(|e| e.to_string())
+    _download_media(&app, params).await.map_err(|e| e.to_string())
 }
 
 /// Cancela la descarga en curso.
@@ -74,129 +87,117 @@ pub async fn cancel_download() -> Result<(), String> {
     Ok(())
 }
 
-// ──────────────────────────────────────────────────────────────
+// =================================================================================
 // Lógica interna
-// ──────────────────────────────────────────────────────────────
+// =================================================================================
 
-async fn _download_audio(
+async fn _download_media(
     app: &AppHandle,
     params: DownloadParams,
 ) -> anyhow::Result<DownloadRecord> {
-    let ytdlp   = platform::get_ytdlp_path(app)?;
-    let ffmpeg  = platform::get_ffmpeg_path(app)?;
     let out_dir = PathBuf::from(&params.output_dir);
-
     anyhow::ensure!(out_dir.exists(), "La carpeta de destino no existe: {}", out_dir.display());
 
-    // Emitir evento inicial "fetching_info"
     emit_progress(app, prog::ProgressPayload {
-        percent: 0.0,
+        percent: 5.0,
         speed:   String::new(),
         eta:     String::new(),
         stage:   prog::DownloadStage::FetchingInfo,
     });
 
-    // Primero obtenemos metadata para el registro del historial
-    let info = crate::commands::metadata::get_video_info(
-        app.clone(),
-        params.url.clone(),
-    ).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let info = crate::commands::metadata::get_video_info(params.url.clone())
+        .await.map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    // Plantilla de salida: <titulo>.%(ext)s
-    let output_template = out_dir
-        .join("%(title)s.%(ext)s")
-        .to_string_lossy()
-        .into_owned();
-
-    // Calidad → bitrate para ffmpeg
-    let audio_quality = match params.quality.as_str() {
-        "128" => "128K",
-        "320" => "320K",
-        _     => "192K",   // default 192
+    let is_audio = params.format == "mp3";
+    let cobalt_url = "https://cobalt.meowing.de/api/json"; // API Pública configurada sin JWT
+    
+    // Configurar el payload para audio (mp3) o video (mp4)
+    let payload = if is_audio {
+        json!({
+            "url": params.url,
+            "isAudioOnly": true,
+            "aFormat": "mp3",
+            "filenamePattern": "classic"
+        })
+    } else {
+        json!({
+            "url": params.url,
+            "vQuality": "1080",
+            "filenamePattern": "classic"
+        })
     };
 
-    // Construir comando yt-dlp
-    let mut cmd = Command::new(&ytdlp);
-    cmd.args([
-        "--no-playlist",
-        "--extract-audio",
-        "--audio-format", "mp3",
-        "--audio-quality", audio_quality,
-        "--ffmpeg-location", &ffmpeg.to_string_lossy(),
-        "--newline",           // progreso línea a línea
-        "--progress",
-        "--no-warnings",
-        "-o", &output_template,
-        &params.url,
-    ])
-    .stdout(std::process::Stdio::piped())
-    .stderr(std::process::Stdio::piped());
+    let client = Client::new();
+    let api_res = client.post(cobalt_url)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Error contactando API Cobalt: {}", e))?;
 
-    let mut child = cmd.spawn()?;
+    let cob_resp: CobaltResponse = api_res.json().await?;
 
-    // Leer stderr línea a línea para progreso
-    if let Some(stderr) = child.stderr.take() {
-        let app_clone = app.clone();
-        tokio::spawn(async move {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                tracing::debug!("yt-dlp: {line}");
-                if let Some(payload) = prog::parse_ytdlp_line(&line) {
-                    emit_progress(&app_clone, payload);
-                }
-                // Revisamos cancelación
-                if cancel_flag().load(Ordering::SeqCst) {
-                    break;
-                }
-            }
-        });
+    if cob_resp.status == "error" || cob_resp.status == "rate-limit" {
+        return Err(anyhow::anyhow!("Cobalt API Error: {}", cob_resp.text.unwrap_or_else(|| "Error desconocido".into())));
     }
 
-    // También leer stdout (yt-dlp a veces escribe progreso en stdout)
-    if let Some(stdout) = child.stdout.take() {
-        let app_clone = app.clone();
-        tokio::spawn(async move {
-            let reader = BufReader::new(stdout);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                if let Some(payload) = prog::parse_ytdlp_line(&line) {
-                    emit_progress(&app_clone, payload);
-                }
-            }
-        });
-    }
+    let download_url = cob_resp.url.ok_or_else(|| anyhow::anyhow!("El servidor no devolvió una URL de stream válida"))?;
 
-    // Esperar a que termine el proceso (con chequeo de cancelación)
-    loop {
+    emit_progress(app, prog::ProgressPayload {
+        percent: 15.0,
+        speed:   String::new(),
+        eta:     String::new(),
+        stage:   prog::DownloadStage::Downloading,
+    });
+
+    let stream_res = client.get(&download_url).send().await
+        .map_err(|e| anyhow::anyhow!("Error descargando stream: {}", e))?;
+
+    // Generar nombre de destino limpio
+    let safe_title = info.title.replace(|c: char| !c.is_alphanumeric() && c != ' ', "_");
+    let ext = if is_audio { "mp3" } else { "mp4" };
+    let filename = format!("{} ({}).{}", safe_title.trim(), Uuid::new_v4().to_string().chars().take(4).collect::<String>(), ext);
+    let out_path = out_dir.join(&filename);
+
+    let mut file = File::create(&out_path).await?;
+    let total_size = stream_res.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
+    
+    let mut stream = stream_res.bytes_stream();
+    let start_time = std::time::Instant::now();
+
+    while let Some(chunk_res) = stream.next().await {
         if cancel_flag().load(Ordering::SeqCst) {
-            let _ = child.kill().await;
+            drop(file);
+            let _ = tokio::fs::remove_file(&out_path).await;
             anyhow::bail!("Descarga cancelada por el usuario");
         }
 
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                if !status.success() {
-                    anyhow::bail!("yt-dlp terminó con error. Código: {:?}", status.code());
-                }
-                break;
-            }
-            Ok(None) => {
-                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-            }
-            Err(e) => {
-                anyhow::bail!("Error esperando a yt-dlp: {e}");
-            }
+        let chunk = chunk_res?;
+        file.write_all(&chunk).await?;
+        downloaded += chunk.len() as u64;
+
+        if total_size > 0 && downloaded % (1024 * 512) == 0 { // Emit progress every ~512KB
+            let pct = (downloaded as f64 / total_size as f64) * 85.0 + 15.0; 
+            
+            // Calc speed
+            let elapsed = start_time.elapsed().as_secs_f64();
+            let mbps = if elapsed > 0.0 { (downloaded as f64 / 1_048_576.0) / elapsed } else { 0.0 };
+            
+            let speed_lbl = format!("{:.1} MB/s", mbps);
+            
+            emit_progress(app, prog::ProgressPayload {
+                percent: pct,
+                speed:   speed_lbl,
+                eta:     String::from("Calculando..."),
+                stage:   prog::DownloadStage::Downloading,
+            });
         }
     }
 
-    // Encontrar el archivo MP3 generado
-    let mp3_path = find_mp3_file(&out_dir, &info.title)?;
-    let file_size_mb = std::fs::metadata(&mp3_path)
-        .map(|m| m.len() as f64 / 1_048_576.0)
-        .unwrap_or(0.0);
+    let file_size_mb = downloaded as f64 / 1_048_576.0;
 
-    // Evento de completado
     emit_progress(app, prog::ProgressPayload {
         percent: 100.0,
         speed:   String::new(),
@@ -211,50 +212,17 @@ async fn _download_audio(
         thumbnail:    info.thumbnail.clone(),
         duration:     info.duration,
         quality:      params.quality.clone(),
-        output_path:  mp3_path.to_string_lossy().into_owned(),
+        format:       params.format.clone(),
+        output_path:  out_path.to_string_lossy().into_owned(),
         downloaded_at: Utc::now().to_rfc3339(),
         file_size_mb,
     };
 
-    // Persistir en historial
     crate::commands::settings::append_history(app, record.clone()).await?;
-
-    tracing::info!("✅ Descarga completa: {}", record.output_path);
+    tracing::info!("Media descargada nativamente: {}", record.output_path);
     Ok(record)
 }
 
-// ──────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────
-
 fn emit_progress(app: &AppHandle, payload: prog::ProgressPayload) {
     let _ = app.emit("download://progress", &payload);
-}
-
-/// Busca el archivo MP3 más reciente en el directorio de salida que contenga
-/// parte del título (tolerante a caracteres especiales que yt-dlp sanitiza).
-fn find_mp3_file(dir: &PathBuf, _title: &str) -> anyhow::Result<PathBuf> {
-    let mut candidates: Vec<PathBuf> = std::fs::read_dir(dir)?
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| {
-            p.extension()
-                .and_then(|e| e.to_str())
-                .map(|e| e.eq_ignore_ascii_case("mp3"))
-                .unwrap_or(false)
-        })
-        .collect();
-
-    if candidates.is_empty() {
-        anyhow::bail!("No se encontró ningún archivo MP3 en {}", dir.display());
-    }
-
-    // Ordenar por tiempo de modificación (más reciente primero)
-    candidates.sort_by(|a, b| {
-        let ta = a.metadata().and_then(|m| m.modified()).ok();
-        let tb = b.metadata().and_then(|m| m.modified()).ok();
-        tb.cmp(&ta)
-    });
-
-    Ok(candidates.remove(0))
 }

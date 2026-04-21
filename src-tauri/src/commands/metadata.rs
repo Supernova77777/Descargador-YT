@@ -1,8 +1,8 @@
-// metadata.rs — Obtener información del video antes de descargar
+// metadata.rs — Obtener información del video antes de descargar (Cobalt API / oEmbed)
 
 use anyhow::Result;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
 
 /// Struct que se devuelve al frontend (espejo del modelo TypeScript `VideoInfo`)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,63 +16,49 @@ pub struct VideoInfo {
     pub upload_date: String,
 }
 
-/// Struct interna para deserializar el JSON de yt-dlp --dump-json
-#[derive(Debug, Deserialize)]
-struct YtDlpInfo {
-    id: Option<String>,
+#[derive(Deserialize)]
+struct OEmbedResponse {
     title: Option<String>,
-    uploader: Option<String>,
-    duration: Option<u64>,
-    thumbnail: Option<String>,
-    view_count: Option<u64>,
-    upload_date: Option<String>,
+    author_name: Option<String>,
+    thumbnail_url: Option<String>,
 }
 
-/// Tauri command: obtiene la metadata del video sin descargarlo.
+/// Tauri command: obtiene la metadata del video usando YouTube oEmbed
 #[tauri::command]
-pub async fn get_video_info(
-    app: AppHandle,
-    url: String,
-) -> Result<VideoInfo, String> {
-    _get_video_info(&app, &url)
+pub async fn get_video_info(url: String) -> Result<VideoInfo, String> {
+    _get_video_info(&url)
         .await
         .map_err(|e| e.to_string())
 }
 
-async fn _get_video_info(app: &AppHandle, url: &str) -> Result<VideoInfo> {
-    let ytdlp = crate::utils::platform::get_ytdlp_path(app)?;
+async fn _get_video_info(url: &str) -> Result<VideoInfo> {
+    let client = Client::new();
+    let oembed_url = format!("https://www.youtube.com/oembed?url={}&format=json", url);
 
-    let output = tokio::process::Command::new(&ytdlp)
-        .args([
-            "--dump-json",
-            "--no-playlist",
-            "--no-warnings",
-            "--quiet",
-            url,
-        ])
-        .output()
-        .await
-        .map_err(|e| anyhow::anyhow!("Error ejecutando yt-dlp: {}", e))?;
+    let res = client.get(&oembed_url).send().await
+        .map_err(|e| anyhow::anyhow!("Error conectando con YouTube: {}", e))?;
 
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("yt-dlp error: {err}");
+    if !res.status().is_success() {
+        return Err(anyhow::anyhow!("Video no encontrado o privado."));
     }
 
-    let raw = String::from_utf8_lossy(&output.stdout);
-    // yt-dlp puede emitir varias líneas JSON (playlists); tomamos la primera
-    let first_line = raw.lines().next().unwrap_or_default();
+    let info: OEmbedResponse = res.json().await
+        .map_err(|e| anyhow::anyhow!("Error decodificando respuesta de YouTube: {}", e))?;
 
-    let info: YtDlpInfo = serde_json::from_str(first_line)
-        .map_err(|e| anyhow::anyhow!("Error parseando JSON de yt-dlp: {e}"))?;
+    let parts: Vec<&str> = url.split("v=").collect();
+    let id = if parts.len() > 1 {
+        parts[1].split('&').next().unwrap_or("unknown").to_string()
+    } else {
+        "unknown".to_string()
+    };
 
     Ok(VideoInfo {
-        id:          info.id.unwrap_or_default(),
-        title:       info.title.unwrap_or_else(|| "Sin título".into()),
-        uploader:    info.uploader.unwrap_or_else(|| "Desconocido".into()),
-        duration:    info.duration.unwrap_or(0),
-        thumbnail:   info.thumbnail.unwrap_or_default(),
-        view_count:  info.view_count.unwrap_or(0),
-        upload_date: info.upload_date.unwrap_or_default(),
+        id,
+        title: info.title.unwrap_or_else(|| "Video Desconocido".into()),
+        uploader: info.author_name.unwrap_or_else(|| "Autor Desconocido".into()),
+        duration: 0, // No proveído por oEmbed
+        thumbnail: info.thumbnail_url.unwrap_or_else(|| "https://via.placeholder.com/480x360.png?text=No+Thumb".into()),
+        view_count: 0,
+        upload_date: "N/A".to_string(),
     })
 }

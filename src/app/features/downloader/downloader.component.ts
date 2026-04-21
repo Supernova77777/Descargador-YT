@@ -8,9 +8,10 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { DownloaderService } from './downloader.service';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import {
-  AudioQuality,
   formatDuration,
   formatViews,
 } from '../../models/download.models';
@@ -25,8 +26,8 @@ import {
 })
 export class DownloaderComponent implements OnInit {
   private svc = inject(DownloaderService);
+  private sanitizer = inject(DomSanitizer);
 
-  // --- Exposed signals from service
   readonly videoInfo    = this.svc.videoInfo;
   readonly progress     = this.svc.progress;
   readonly isLoading    = this.svc.isLoading;
@@ -35,9 +36,9 @@ export class DownloaderComponent implements OnInit {
   readonly lastRecord   = this.svc.lastRecord;
   readonly isIdle       = this.svc.isIdle;
 
-  // --- Local component state
   url     = signal('');
-  quality = signal<AudioQuality>('192');
+  format  = signal<string>('mp3');
+  quality = signal<string>('192');
   outputDir = signal('');
 
   readonly canFetch = computed(
@@ -58,20 +59,41 @@ export class DownloaderComponent implements OnInit {
   readonly stageLabel = computed(() => {
     const stage = this.progress()?.stage;
     const labels: Record<string, string> = {
-      fetching_info: 'Obteniendo info…',
-      downloading:   'Descargando audio…',
-      converting:    'Convirtiendo a MP3…',
+      fetching_info: 'Contactando Cobalt API…',
+      downloading:   'Descargando Stream…',
       complete:      '¡Descarga completa!',
       error:         'Error en la descarga',
     };
     return stage ? labels[stage] ?? stage : '';
   });
 
-  readonly qualities: { value: AudioQuality; label: string }[] = [
-    { value: '128', label: '128 kbps — Normal' },
-    { value: '192', label: '192 kbps — Alta' },
-    { value: '320', label: '320 kbps — Máxima ✨' },
-  ];
+  readonly currentQualities = computed(() => {
+    if (this.format() === 'mp3') {
+      return [
+        { value: '128', label: '128 kbps — Normal' },
+        { value: '192', label: '192 kbps — Alta' },
+        { value: '320', label: '320 kbps — Máxima ✨' },
+      ];
+    } else {
+      return [
+        { value: '720', label: '720p — HD' },
+        { value: '1080', label: '1080p — Full HD ✨' },
+        { value: '1440', label: '1440p — 2K' },
+        { value: '2160', label: '2160p — 4K' },
+      ];
+    }
+  });
+
+  readonly playerUrl = computed<SafeResourceUrl | null>(() => {
+    const rec = this.lastRecord();
+    if (!rec || !rec.output_path) return null;
+    try {
+      const url = convertFileSrc(rec.output_path);
+      return this.sanitizer.bypassSecurityTrustResourceUrl(url);
+    } catch {
+      return null;
+    }
+  });
 
   formatDuration = formatDuration;
   formatViews    = formatViews;
@@ -96,7 +118,8 @@ export class DownloaderComponent implements OnInit {
     await this.svc.startDownload({
       url:        this.url().trim(),
       output_dir: this.outputDir(),
-      quality:    this.quality(),
+      format:     this.format(),
+      quality:    (this.format() === 'mp4' && this.quality() === '192') ? '720' : this.quality(),
     });
   }
 
@@ -106,7 +129,7 @@ export class DownloaderComponent implements OnInit {
 
   onPaste(event: ClipboardEvent): void {
     const text = event.clipboardData?.getData('text') ?? '';
-    if (text.includes('youtube.com') || text.includes('youtu.be')) {
+    if (text.includes('youtube.com') || text.includes('youtu.be') || text.includes('tiktok.com') || text.includes('x.com')) {
       this.url.set(text.trim());
       setTimeout(() => this.onFetch(), 200);
     }
