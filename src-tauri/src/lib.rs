@@ -4,8 +4,9 @@ mod commands;
 mod utils;
 
 use commands::{download, metadata, settings as cfg};
-use tauri::Manager;
 
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Inicializar tracing
     tracing_subscriber::fmt()

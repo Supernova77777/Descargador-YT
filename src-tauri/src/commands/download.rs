@@ -10,11 +10,10 @@ use std::{
         Arc,
     },
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::Command,
-    sync::Mutex,
 };
 use uuid::Uuid;
 

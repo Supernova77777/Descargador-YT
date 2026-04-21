@@ -1,11 +1,8 @@
 // metadata.rs — Obtener información del video antes de descargar
 
-use crate::utils::platform;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::process::Stdio;
 use tauri::AppHandle;
-use tokio::process::Command;
 
 /// Struct que se devuelve al frontend (espejo del modelo TypeScript `VideoInfo`)
 #[derive(Debug, Clone, Serialize, Deserialize)]
