@@ -155,6 +155,23 @@ jobs:
         env:
           NDK_HOME: ${{ env.NDK_HOME }}
 
+      # ── Firmar APK para permitir instalación en dispositivos reales ──
+      - name: 🔐 Sign APK
+        run: |
+          APKSIGNER=$(find $ANDROID_SDK_ROOT/build-tools -name apksigner | sort -r | head -n 1)
+          keytool -genkey -v -keystore ./debug.keystore -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "cn=Unknown, ou=Unknown, o=Unknown, c=Unknown"
+          
+          # Encontrar y firmar los APKs usando bash globbing
+          shopt -s globstar
+          for apk in src-tauri/gen/android/app/build/outputs/apk/**/*.apk; do
+            if [[ $apk == *"-unsigned.apk" ]]; then
+              echo "Firmando $apk ..."
+              $APKSIGNER sign --ks ./debug.keystore --ks-pass pass:android --key-pass pass:android "$apk"
+              # Quitar "-unsigned" del nombre para el Release
+              mv "$apk" "${apk/-unsigned/}"
+            fi
+          done
+
       # ── Subir APK al Release de GitHub ──
       - name: 📤 Upload APK to Release
         uses: softprops/action-gh-release@v2
