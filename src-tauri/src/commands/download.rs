@@ -122,7 +122,7 @@ async fn _download_media(
     } else {
         json!({
             "url": params.url,
-            "vQuality": "1080",
+            "vQuality": params.quality,
             "filenamePattern": "classic"
         })
     };

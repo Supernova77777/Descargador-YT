@@ -4,7 +4,18 @@ mod commands;
 mod utils;
 
 use commands::{download, metadata, settings as cfg};
+use tauri_plugin_deep_link::DeepLinkExt;
+use tauri::Emitter;
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
 
+static INITIAL_URL: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+
+#[tauri::command]
+pub fn get_initial_shared_url() -> Option<String> {
+    let mut init_url = INITIAL_URL.lock().unwrap();
+    init_url.take()
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,6 +33,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_deep_link::init())
         // ── Setup ──
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -30,6 +42,23 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = cfg::ensure_app_dir(&app_handle).await {
                     tracing::error!("Error inicializando directorio de la app: {e}");
+                }
+            });
+
+            #[cfg(desktop)]
+            let _ = app.deep_link().register_all();
+
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                if let Some(url) = urls.first() {
+                    let mut init_url = INITIAL_URL.lock().unwrap();
+                    *init_url = Some(url.to_string());
+                }
+            }
+
+            let app_handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                if let Some(url) = event.urls().first() {
+                    let _ = app_handle.emit("shared-url", url.to_string());
                 }
             });
 
@@ -45,6 +74,7 @@ pub fn run() {
             cfg::get_default_output_dir,
             cfg::get_history,
             cfg::clear_history,
+            get_initial_shared_url,
         ])
         .run(tauri::generate_context!())
         .expect("Error al iniciar la aplicación Tauri");

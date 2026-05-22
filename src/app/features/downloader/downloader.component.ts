@@ -10,7 +10,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { DownloaderService } from './downloader.service';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import {
   formatDuration,
   formatViews,
@@ -101,6 +102,39 @@ export class DownloaderComponent implements OnInit {
   async ngOnInit(): Promise<void> {
     const dir = await this.svc.getDefaultOutputDir();
     this.outputDir.set(dir);
+
+    // 1. Obtener la URL inicial en caso de que la aplicación haya iniciado con una URL compartida
+    try {
+      const initUrl = await invoke<string | null>('get_initial_shared_url');
+      if (initUrl) {
+        await this.handleIncomingSharedUrl(initUrl);
+      }
+    } catch (e) {
+      console.error('Error al recuperar URL inicial:', e);
+    }
+
+    // 2. Escuchar futuras URLs compartidas mientras la app esté activa
+    listen<string>('shared-url', async (event) => {
+      const urlVal = event.payload;
+      if (urlVal) {
+        await this.handleIncomingSharedUrl(urlVal);
+      }
+    });
+  }
+
+  async handleIncomingSharedUrl(urlVal: string): Promise<void> {
+    const trimmed = urlVal.trim();
+    if (!trimmed) return;
+    this.url.set(trimmed);
+    await this.svc.fetchVideoInfo(trimmed);
+    if (this.videoInfo() && this.outputDir().trim().length > 0) {
+      await this.svc.startDownload({
+        url:        trimmed,
+        output_dir: this.outputDir(),
+        format:     this.format(),
+        quality:    (this.format() === 'mp4' && this.quality() === '192') ? '720' : this.quality(),
+      });
+    }
   }
 
   async onFetch(): Promise<void> {
