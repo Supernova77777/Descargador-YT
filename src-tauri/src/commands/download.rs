@@ -4,10 +4,10 @@ use crate::utils::progress as prog;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Mutex,
     },
 };
 use reqwest::Client;
@@ -16,6 +16,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::{fs::File, io::AsyncWriteExt};
 use futures_util::StreamExt;
 use uuid::Uuid;
+use once_cell::sync::Lazy;
 
 // =================================================================================
 // Tipos públicos
@@ -85,6 +86,14 @@ pub async fn cancel_download() -> Result<(), String> {
     cancel_flag().store(true, Ordering::SeqCst);
     tracing::info!("Descarga cancelada por el usuario");
     Ok(())
+}
+
+pub static INITIAL_URL: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+
+#[tauri::command]
+pub fn get_initial_shared_url() -> Option<String> {
+    let mut init_url = INITIAL_URL.lock().unwrap();
+    init_url.take()
 }
 
 // =================================================================================

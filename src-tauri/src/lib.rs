@@ -6,16 +6,6 @@ mod utils;
 use commands::{download, metadata, settings as cfg};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri::Emitter;
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
-
-static INITIAL_URL: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
-
-#[tauri::command]
-pub fn get_initial_shared_url() -> Option<String> {
-    let mut init_url = INITIAL_URL.lock().unwrap();
-    init_url.take()
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -50,7 +40,7 @@ pub fn run() {
 
             if let Ok(Some(urls)) = app.deep_link().get_current() {
                 if let Some(url) = urls.first() {
-                    let mut init_url = INITIAL_URL.lock().unwrap();
+                    let mut init_url = commands::download::INITIAL_URL.lock().unwrap();
                     *init_url = Some(url.to_string());
                 }
             }
@@ -74,7 +64,7 @@ pub fn run() {
             cfg::get_default_output_dir,
             cfg::get_history,
             cfg::clear_history,
-            get_initial_shared_url,
+            download::get_initial_shared_url,
         ])
         .run(tauri::generate_context!())
         .expect("Error al iniciar la aplicación Tauri");
